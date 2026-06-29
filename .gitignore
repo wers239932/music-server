@@ -13,7 +13,9 @@ config/navidrome/*
 config/music-assistant/*
 config/lidarr/*
 config/metube/*
+config/lidarr-yt/*
 !config/navidrome/.gitkeep
 !config/music-assistant/.gitkeep
 !config/lidarr/.gitkeep
 !config/metube/.gitkeep
+!config/lidarr-yt/.gitkeep

@@ -19,11 +19,12 @@
 │  /data/music │◄──────────────│  Lidarr  :8686       │
 │  (библиотека)│               │  (менеджер коллекции)│
 └──────────────┘               └──────────┬───────────┘
-                                          │ «нужны треки»
+                                          │ «missing tracks»
                                           ▼
                                ┌──────────────────────┐
                                │  Lidarr YT Downloader│
-                               │  (angrido/...)       │
+                               │  angrido/lidarr-     │
+                               │  downloader  :5005   │
                                │  → YouTube → /data   │
                                └──────────────────────┘
 
@@ -46,11 +47,12 @@ music-stack/
 │   ├── navidrome/
 │   ├── music-assistant/
 │   ├── lidarr/
-│   └── metube/
+│   ├── lidarr-yt/                 # конфиг веб-UI загрузчика
+│   └── downloader-scripts/
 └── data/                         # медиаконтент (gitignored)
     ├── downloads/
     │   ├── metube/                # сырые загрузки из MeTube
-    │   └── lidarr-yt/             # сырые загрузки из Lidarr YT Downloader
+    │   └── lidarr-yt/             # временные файлы загрузчика
     └── music/                    # организованная библиотека
         ├── Artist Name/
         │   └── Album Name/
@@ -70,7 +72,7 @@ git clone https://github.com/wers239932/music-server.git /srv/music-stack
 cd /srv/music-stack
 
 # Создать структуру папок
-mkdir -p config/{navidrome,music-assistant,lidarr,metube,downloader-scripts} \
+mkdir -p config/{navidrome,music-assistant,lidarr,lidarr-yt,downloader-scripts} \
          data/music \
          data/downloads/{metube,lidarr-yt}
 
@@ -108,7 +110,7 @@ docker compose ps
 
 ### 4. Настроить Lidarr и получить API-ключ
 
-1. Откройте **http://\<ваш-ip\>:8686**
+1. Откройте **http://<ваш-ip>:8686**
 2. Пройдите первичную настройку (язык, путь к музыке)
 3. **Settings → General** → скопируйте **API Key**
 4. Вставьте его в `.env`:
@@ -134,16 +136,30 @@ docker compose ps
 
 - Включите **Last.fm** (используйте те же API-ключи, что в `.env`)
 
-### 6. Добавить артистов в Lidarr
+### 6. Настроить Lidarr YouTube Downloader (веб-UI)
+
+1. Откройте **http://<ваш-ip>:5005**
+2. Основные настройки уже заданы через переменные окружения
+3. В **Settings** (веб-UI) можно настроить:
+   - Формат аудио (MP3/M4A/Opus)
+   - Параллельные загрузки (1–5)
+   - Порог совпадения (match score)
+   - Запрещённые слова (remix, live, cover, karaoke…)
+   - Автозагрузку по расписанию (scheduler)
+   - Уведомления (Telegram / Discord)
+
+**Рекомендация:** включите **Lidarr Download Client** режим (Settings → Lidarr Download Client → Enable). Это зарегистрирует загрузчик как нативный индексер + download client внутри Lidarr — тогда Lidarr сам будет инициировать поиск и импорт.
+
+### 7. Добавить артистов в Lidarr
 
 1. Перейдите в **Artists → Add New**
 2. Найдите артиста, нажмите **Add**
 3. Включите **«Monitor All Albums»**
-4. Lidarr YT Downloader автоматически найдёт и скачает недостающие альбомы с YouTube
+4. Lidarr YouTube Downloader автоматически найдёт и скачает недостающие альбомы с YouTube
 
-### 7. Настроить Navidrome
+### 8. Настроить Navidrome
 
-1. Откройте **http://\<ваш-ip\>:4533**
+1. Откройте **http://<ваш-ip>:4533**
 2. Создайте аккаунт администратора
 3. **Settings → Settings**:
    - Папка музыки: `/music` (уже прописана)
@@ -151,9 +167,9 @@ docker compose ps
    - Введите логин/пароль **Last.fm** для скробблинга
 5. Нажмите **Scan** — музыка из `/data/music` появится в интерфейсе
 
-### 8. Настроить Music Assistant
+### 9. Настроить Music Assistant
 
-1. Откройте **http://\<ваш-ip\>:8095**
+1. Откройте **http://<ваш-ip>:8095**
 2. Пройдите первичную настройку
 3. **Music Providers → Add Provider**:
    - Тип: **Subsonic / Navidrome**
@@ -164,9 +180,9 @@ docker compose ps
    - Включите **LastFM Scrobbler**
    - Введите Last.fm API-ключи
 
-### 9. Использовать MeTube (ручная загрузка)
+### 10. Использовать MeTube (ручная загрузка)
 
-1. Откройте **http://\<ваш-ip\>:8081**
+1. Откройте **http://<ваш-ip>:8081**
 2. Вставьте ссылку на YouTube-видео / плейлист
 3. В выпадающем списке выберите **Audio → mp3** (или другой формат)
 4. Файл сохранится в `data/downloads/metube/`
@@ -181,24 +197,45 @@ docker compose ps
 ### Цепочка автоматической загрузки
 
 ```
-Lidarr (база артистов/альбомов)
+Lidarr (база артистов/альбомов, мониторинг)
   │
-  │ «У этого артиста не хватает альбома X»
+  │ API: /wanted/missing → «У артиста X не хватает альбома Y»
   ▼
-Lidarr YouTube Downloader
+Lidarr YouTube Downloader (:5005)
   │
-  │ Ищет на YouTube → Скачивает аудио → Назначает ID3-теги (MusicBrainz)
+  │ 1. Sync — забирает missing-треки из Lidarr API
+  │ 2. Search — ищет до 15 кандидатов на YouTube через yt-dlp
+  │ 3. Score — ранжирует по совпадению названия (50%), длительности (25%),
+  │    официальный канал (15%), просмотры; фильтрует remix/live/cover
+  │ 4. Verify — (опц.) AcoustID fingerprint через fpcalc
+  │ 5. Tag — Mutagen пишет ID3 (title, artist, album, year, MusicBrainz IDs)
+  │    + встраивает обложку 3000×3000 из iTunes
+  │ 6. Import — копирует в /data/music, вызывает Lidarr RefreshArtist
   ▼
-/data/downloads/lidarr-yt/  (сырой файл)
-  │
-  │ Lidarr подхватывает, переименовывает, проставляет обложку
-  ▼
-/data/music/Artist/Album/  (готовый трек в библиотеке)
+/data/music/Artist/Album/  (готовый трек с тегами и обложкой)
   │
   │ Navidrome сканирует и добавляет в каталог
   ▼
-Веб-интерфейс Navidrome / мобильные клиенты
+Веб-интерфейс Navidrome / мобильные клиенты (Subsonic API)
 ```
+
+### Альтернативный режим: Lidarr Download Client
+
+Вместо того чтобы загрузчик сам пушел файлы, его можно зарегистрировать **внутри Lidarr** как нативный индексер + SABnzbd download client. Тогда Lidarr сам инициирует поиск, grabs и импорт.
+
+**Настройка:**
+
+1. В **Lidarr YT Downloader → Settings → Lidarr Download Client**: включить, сгенерировать API-ключ
+2. В **Lidarr → Settings → Indexers → + → Newznab (custom)**:
+   - URL: `http://lidarr-yt:5000`
+   - API Path: `/api/newznab/api`
+   - API Key: сгенерированный ключ
+3. В **Lidarr → Settings → Download Clients → + → SABnzbd**:
+   - Host: `lidarr-yt`, Port: `5000`
+   - URL Base: `/api/sabnzbd`
+   - API Key: тот же ключ
+   - Category: `music`
+4. В **Lidarr → Settings → Media Management**: включить **Completed Download Handling**
 
 ### Цепочка скробблинга и рекомендаций
 
@@ -220,27 +257,42 @@ Lidarr YouTube Downloader
 /data/downloads/metube/файл.mp3  (без тегов)
   │
   ├─ Ручной перенос + тегирование (mp3tag, kid3, etc.)
-  └─ Автоматический: metube-organize.sh (см. ниже)
-      ▼
-/data/music/_Unsorted/  (или в правильную структуру)
+  └─ Автоматический: metube-organize.sh → /data/music/_Unsorted/
       ▼
   Navidrome подхватит при следующем сканировании
 ```
 
 ---
 
-## 🔧 Дополнительно: скрипт организации MeTube-загрузок
+## 🔧 Дополнительно
 
-Скрипт `config/downloader-scripts/metube-organize.sh` мониторит папку MeTube и перемещает файлы в `_Unsorted`:
+### Скрипт организации MeTube-загрузок
+
+`config/downloader-scripts/metube-organize.sh` перемещает файлы из MeTube в `_Unsorted`:
 
 ```bash
-# Запуск (в фоне)
-bash config/downloader-scripts/metube-organize.sh &
+# Разовый запуск
+bash config/downloader-scripts/metube-organize.sh
 
-# Или через cron (каждые 5 минут)
+# Через cron (каждые 5 минут)
 crontab -e
-# Добавить: */5 * * * * /srv/music-stack/config/downloader-scripts/metube-organize.sh
+# */5 * * * * /srv/music-stack/config/downloader-scripts/metube-organize.sh
 ```
+
+### YouTube cookies (рекомендуется для загрузчика)
+
+Если YouTube возвращает «Sign in to confirm you're not a bot»:
+
+1. Установите расширение **Get cookies.txt LOCALLY**
+2. Откройте приватное окно, войдите в **одноразовый** Google-аккаунт
+3. Экспортируйте cookies в Netscape-формате как `cookies.txt`
+4. Добавьте в docker-compose.yml:
+   ```yaml
+   volumes:
+     - ./cookies.txt:/cookies/cookies.txt
+   environment:
+     - YT_COOKIES_FILE=/cookies/cookies.txt
+   ```
 
 ---
 
@@ -251,16 +303,17 @@ crontab -e
 | Navidrome | 4533 | Веб-плеер + Subsonic API |
 | Music Assistant | 8095 | Рекомендации и оркестрация |
 | Lidarr | 8686 | Управление библиотекой |
+| Lidarr YT Downloader | 5005 | Веб-UI загрузчика + управление |
 | MeTube | 8081 | Ручной загрузчик YouTube |
 
 ---
 
 ## ⚠️ Ограничения
 
-1. **Качество аудио с YouTube** — до 256 kbps (AAC/Opus), не FLAC. Для аудиофилов рекомендуется использовать другие источники.
-2. **Точность поиска** — Lidarr YT Downloader может скачать кавер вместо оригинала.
+1. **Качество аудио с YouTube** — до 256 kbps (AAC/Opus), не FLAC.
+2. **Точность поиска** — загрузчик скорирует до 15 кандидатов, но может скачать кавер вместо оригинала.
 3. **MeTube файлы** — не имеют ID3-тегов; требуется ручная обработка или скрипт.
-4. **Lidarr YT Downloader** — образ `angrido/lidarr-youtube-downloader` может быть недоступен; в этом случае соберите из исходников (см. комментарии в docker-compose.yml).
+4. **YouTube ограничения** — при частых запросах может потребоваться cookies-файл (см. выше).
 
 ---
 
@@ -268,15 +321,15 @@ crontab -e
 
 ```bash
 # Посмотреть логи
- docker compose logs -f navidrome
- docker compose logs -f lidarr-yt
+docker compose logs -f navidrome
+docker compose logs -f lidarr-yt
 
 # Перезапуск конкретного сервиса
- docker compose restart lidarr-youtube-downloader
+docker compose restart lidarr-youtube-downloader
 
 # Обновить все образы и перезапустить
- docker compose pull && docker compose up -d
+docker compose pull && docker compose up -d
 
 # Принудительное сканирование Navidrome (через API)
- curl -X POST http://localhost:4533/api/scan?subsonic_salt=x&subsonic_token=y
+curl -X POST http://localhost:4533/api/scan?subsonic_salt=x&subsonic_token=y
 ```

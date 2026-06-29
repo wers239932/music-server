@@ -62,22 +62,27 @@ services:
 
   # =========================================================================
   # 4. Lidarr YouTube Downloader — Автозагрузка недостающих треков
-  #    Собирается из исходников (N4TH4N088/lidarr-youtube-downloader).
-  #    Первый запуск: docker compose build lidarr-youtube-downloader
+  #    https://github.com/Angrido/Lidarr-YouTube-Downloader
+  #    Ищет missing-альбомы в Lidarr, скачивает с YouTube, тегирует
+  #    (MusicBrainz + ID3) и импортирует обратно. Собственный веб-UI.
   # =========================================================================
   lidarr-youtube-downloader:
-    build:
-      context: ./config/downloader-scripts
-      dockerfile: Dockerfile
+    image: angrido/lidarr-downloader:latest
     container_name: lidarr-yt
+    ports:
+      - "5005:5000"
     environment:
-      - LIDARR_API_KEY=${LIDARR_API_KEY}
       - LIDARR_URL=http://lidarr:8686
-      - DOWNLOAD_DIR=/data/downloads/lidarr-yt
-      - MUSIC_DIR=/data/music
-      - YT_DLP_FORMAT=bestaudio/best
+      - LIDARR_API_KEY=${LIDARR_API_KEY}
+      - DOWNLOAD_PATH=/data/downloads/lidarr-yt
+      - LIDARR_PATH=/data/music
+      - PUID=1000
+      - PGID=1000
+      - UMASK=002
     volumes:
-      - ./data:/data
+      - ./config/lidarr-yt:/config
+      - ./data/downloads/lidarr-yt:/data/downloads/lidarr-yt
+      - ./data/music:/music
     depends_on:
       - lidarr
     networks:
