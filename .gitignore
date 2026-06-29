@@ -1,1 +1,19 @@
+# Environment variables (contains secrets)
 .env
+
+# Data directories (media files, databases)
+data/music/*
+data/downloads/*
+!data/music/.gitkeep
+!data/downloads/metube/.gitkeep
+!data/downloads/lidarr-yt/.gitkeep
+
+# Service configs (contain DBs, sessions, settings)
+config/navidrome/*
+config/music-assistant/*
+config/lidarr/*
+config/metube/*
+!config/navidrome/.gitkeep
+!config/music-assistant/.gitkeep
+!config/lidarr/.gitkeep
+!config/metube/.gitkeep

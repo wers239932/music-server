@@ -1,0 +1,111 @@
+services:
+  # =========================================================================
+  # 1. Navidrome — Стриминговый сервер (веб-плеер + Subsonic API)
+  # =========================================================================
+  navidrome:
+    image: deluan/navidrome:latest
+    container_name: navidrome
+    ports:
+      - "4533:4533"
+    environment:
+      - ND_LOGLEVEL=info
+      - ND_SESSIONTIMEOUT=24h
+      - ND_ENABLETRANSCODING=true
+      - ND_SCANNER_PROVIDER=filesystem
+      # Last.fm скробблинг на уровне сервера (опционально)
+      - ND_LASTFM_APIKEY=${LASTFM_API_KEY:-}
+      - ND_LASTFM_SECRET=${LASTFM_SECRET:-}
+      - ND_DEEZER_ENABLED=true
+      - ND_LISTENBRAINZ_ENABLED=true
+    volumes:
+      - ./config/navidrome:/data
+      - ./data/music:/music:ro
+    networks:
+      - media-network
+    restart: unless-stopped
+
+  # =========================================================================
+  # 2. Music Assistant — Умные рекомендации и оркестрация
+  # =========================================================================
+  music-assistant:
+    image: ghcr.io/music-assistant/server:latest
+    container_name: music-assistant
+    ports:
+      - "8095:8095"
+    environment:
+      - MA_LOGLEVEL=info
+    volumes:
+      - ./config/music-assistant:/config
+      - ./data/music:/music:ro
+    networks:
+      - media-network
+    restart: unless-stopped
+
+  # =========================================================================
+  # 3. Lidarr — Менеджер музыкальной библиотеки
+  # =========================================================================
+  lidarr:
+    image: lscr.io/linuxserver/lidarr:latest
+    container_name: lidarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=${TZ:-Europe/Moscow}
+    volumes:
+      - ./config/lidarr:/config
+      - ./data:/data
+    ports:
+      - "8686:8686"
+    networks:
+      - media-network
+    restart: unless-stopped
+
+  # =========================================================================
+  # 4. Lidarr YouTube Downloader — Автозагрузка недостающих треков
+  #    Ищет отсутствующие релизы в Lidarr и скачивает с YouTube.
+  #    Если образ angrido/... недоступен, используйте локальную сборку:
+  #      docker compose build lidarr-youtube-downloader
+  #    (для этого раскомментируйте секцию build ниже)
+  # =========================================================================
+  lidarr-youtube-downloader:
+    image: angrido/lidarr-youtube-downloader:latest
+    container_name: lidarr-yt
+    environment:
+      - LIDARR_API_KEY=${LIDARR_API_KEY}
+      - LIDARR_URL=http://lidarr:8686
+      - DOWNLOAD_DIR=/data/downloads/lidarr-yt
+      - MUSIC_DIR=/data/music
+      - YT_DLP_FORMAT=bestaudio/best
+    volumes:
+      - ./data:/data
+    depends_on:
+      - lidarr
+    networks:
+      - media-network
+    restart: unless-stopped
+    # --- Альтернатива: локальная сборка (раскомментируйте, если образ недоступен) ---
+    # build:
+    #   context: ./config/downloader-scripts
+    #   dockerfile: Dockerfile
+
+  # =========================================================================
+  # 5. MeTube — Ручной загрузчик с YouTube (веб-интерфейс yt-dlp)
+  #    Внутри контейнера загрузки сохраняются в /downloads.
+  #    Выберите нужный формат прямо в веб-UI MeTube.
+  # =========================================================================
+  metube:
+    image: alexta69/metube:latest
+    container_name: metube
+    environment:
+      - THEME=dark
+    volumes:
+      - ./data/downloads/metube:/downloads
+    ports:
+      - "8081:8081"
+    networks:
+      - media-network
+    restart: unless-stopped
+
+networks:
+  media-network:
+    driver: bridge
