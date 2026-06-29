@@ -62,13 +62,13 @@ services:
 
   # =========================================================================
   # 4. Lidarr YouTube Downloader — Автозагрузка недостающих треков
-  #    Ищет отсутствующие релизы в Lidarr и скачивает с YouTube.
-  #    Если образ angrido/... недоступен, используйте локальную сборку:
-  #      docker compose build lidarr-youtube-downloader
-  #    (для этого раскомментируйте секцию build ниже)
+  #    Собирается из исходников (N4TH4N088/lidarr-youtube-downloader).
+  #    Первый запуск: docker compose build lidarr-youtube-downloader
   # =========================================================================
   lidarr-youtube-downloader:
-    image: angrido/lidarr-youtube-downloader:latest
+    build:
+      context: ./config/downloader-scripts
+      dockerfile: Dockerfile
     container_name: lidarr-yt
     environment:
       - LIDARR_API_KEY=${LIDARR_API_KEY}
@@ -83,10 +83,6 @@ services:
     networks:
       - media-network
     restart: unless-stopped
-    # --- Альтернатива: локальная сборка (раскомментируйте, если образ недоступен) ---
-    # build:
-    #   context: ./config/downloader-scripts
-    #   dockerfile: Dockerfile
 
   # =========================================================================
   # 5. MeTube — Ручной загрузчик с YouTube (веб-интерфейс yt-dlp)
